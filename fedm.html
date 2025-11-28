@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Student Marks Table — Sorting & Filtering</title>
+  <style>
+    :root{
+      --bg:#f6f8fa;
+      --card:#ffffff;
+      --muted:#6b7280;
+      --accent:#0f62fe;
+      --border:#e6e9ee;
+      --success:#10b981;
+    }
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+    body{background:linear-gradient(180deg,#eef2ff 0%,var(--bg) 60%);padding:28px;box-sizing:border-box;color:#0f1724}
+    .container{max-width:980px;margin:0 auto;}
+    .card{background:var(--card);border-radius:12px;box-shadow:0 6px 20px rgba(15,23,42,0.06);padding:20px;border:1px solid var(--border)}
+    h1{font-size:20px;margin:0 0 14px}
+    p.lead{margin:0 0 18px;color:var(--muted);font-size:14px}
+    .controls{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+    .controls label{font-size:13px;color:var(--muted);display:flex;flex-direction:column}
+    .controls select,.controls input{
+      margin-top:6px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:white;
+      min-width:120px;font-size:14px;outline:none
+    }
+    .controls .range-wrap{display:flex;gap:8px;align-items:center}
+    .controls button{margin-left:auto;padding:8px 12px;border-radius:8px;border:0;background:var(--accent);color:white;cursor:pointer}
+    table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+    thead th{background:#fbfdff;text-align:left;padding:10px;border-bottom:1px solid var(--border);position:relative;cursor:pointer;user-select:none}
+    thead th .sort-ind{font-size:12px;color:var(--muted);margin-left:8px}
+    tbody td{padding:10px;border-bottom:1px solid #f1f4f8}
+    tbody tr:hover{background:#fbfbff}
+    .score-badge{display:inline-block;padding:6px 8px;border-radius:999px;background:#f3f8ff;color:var(--accent);font-weight:600}
+    .empty{padding:24px;text-align:center;color:var(--muted)}
+    .footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--muted);font-size:13px}
+    @media (max-width:640px){
+      .controls{flex-direction:column;align-items:stretch}
+      .controls button{margin-left:0}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card" aria-live="polite">
+      <h1>Question 24 — Student Marks Table</h1>
+      <p class="lead">Displaying students' marks for different subjects. Click headers to sort. Filter by subject or score range. Table updates dynamically.</p>
+
+      <div class="controls" role="region" aria-label="table controls">
+        <label>
+          Subject
+          <select id="subjectFilter">
+            <!-- options filled by JS -->
+          </select>
+        </label>
+
+        <label>
+          Min score
+          <input id="minScore" type="number" min="0" max="100" placeholder="0" />
+        </label>
+
+        <label>
+          Max score
+          <input id="maxScore" type="number" min="0" max="100" placeholder="100" />
+        </label>
+
+        <div style="display:flex;gap:8px;align-items:end;">
+          <button id="applyBtn" title="Apply filters">Apply</button>
+          <button id="resetBtn" style="background:#e6eefc;color:var(--accent);border:1px solid var(--accent)">Reset</button>
+        </div>
+      </div>
+
+      <div style="overflow:auto">
+        <table aria-describedby="tableDesc" id="marksTable">
+          <caption id="tableDesc" style="display:none">Student marks table with sortable columns and filtering</caption>
+          <thead>
+            <tr>
+              <th data-key="student">Student <span class="sort-ind" aria-hidden>⇅</span></th>
+              <th data-key="subject">Subject <span class="sort-ind" aria-hidden>⇅</span></th>
+              <th data-key="score">Score <span class="sort-ind" aria-hidden>⇅</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- rows injected by JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="footer">
+        <div id="summary"></div>
+        <div style="font-size:13px">Showing <span id="count">0</span> rows</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Sample dataset
+    const data = [
+      { student: "Aisha Khan", subject: "Math", score: 92 },
+      { student: "Ben Carter", subject: "Physics", score: 81 },
+      { student: "Chen Li", subject: "Chemistry", score: 74 },
+      { student: "Diego Ramos", subject: "Math", score: 68 },
+      { student: "Emma Brown", subject: "Biology", score: 88 },
+      { student: "Farah Ali", subject: "Physics", score: 95 },
+      { student: "Grace Kim", subject: "Chemistry", score: 59 },
+      { student: "Hiro Tanaka", subject: "Biology", score: 77 },
+      { student: "Isla Johnson", subject: "Math", score: 84 },
+      { student: "Jamal White", subject: "Chemistry", score: 69 }
+    ];
+
+    // App state
+    let state = {
+      rows: [...data],
+      sortKey: null,
+      sortDir: 1 // 1 => asc, -1 => desc
+    };
+
+    // DOM references
+    const tbody = document.querySelector("#marksTable tbody");
+    const headers = Array.from(document.querySelectorAll("thead th"));
+    const subjectFilter = document.getElementById("subjectFilter");
+    const minScoreInput = document.getElementById("minScore");
+    const maxScoreInput = document.getElementById("maxScore");
+    const applyBtn = document.getElementById("applyBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const summary = document.getElementById("summary");
+    const countEl = document.getElementById("count");
+
+    // Initialize subject options
+    function initSubjectOptions() {
+      const subjects = Array.from(new Set(data.map(d => d.subject))).sort();
+      subjectFilter.innerHTML = "";
+      const allOpt = document.createElement("option");
+      allOpt.value = "";
+      allOpt.textContent = "All subjects";
+      subjectFilter.appendChild(allOpt);
+      for (const s of subjects) {
+        const o = document.createElement("option");
+        o.value = s;
+        o.textContent = s;
+        subjectFilter.appendChild(o);
+      }
+    }
+
+    // Render table
+    function renderRows(rows) {
+      tbody.innerHTML = "";
+      if (!rows.length) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 3;
+        td.className = "empty";
+        td.textContent = "No rows match your filters.";
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        summary.textContent = "";
+        countEl.textContent = 0;
+        return;
+      }
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        const tdName = document.createElement("td");
+        tdName.textContent = r.student;
+        const tdSub = document.createElement("td");
+        tdSub.textContent = r.subject;
+        const tdScore = document.createElement("td");
+        tdScore.innerHTML = `<span class="score-badge" aria-label="score ${r.score}">${r.score}</span>`;
+        tr.appendChild(tdName);
+        tr.appendChild(tdSub);
+        tr.appendChild(tdScore);
+        tbody.appendChild(tr);
+      }
+      // summary: average score, highest, lowest
+      const scores = rows.map(r => r.score);
+      const avg = (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1);
+      const max = Math.max(...scores);
+      const min = Math.min(...scores);
+      summary.textContent = `Avg: ${avg} • High: ${max} • Low: ${min}`;
+      countEl.textContent = rows.length;
+    }
+
+    // Sorting
+    function sortRows(rows, key, dir) {
+      if (!key) return rows;
+      return rows.slice().sort((a,b)=>{
+        const va = a[key], vb = b[key];
+        if (typeof va === "number" && typeof vb === "number") {
+          return (va - vb) * dir;
+        }
+        return va.toString().localeCompare(vb.toString(), undefined, {sensitivity:'base'}) * dir;
+      });
+    }
+
+    // Apply filters from UI
+    function applyFilters() {
+      const subject = subjectFilter.value;
+      const minRaw = minScoreInput.value;
+      const maxRaw = maxScoreInput.value;
+      let rows = data.slice();
+
+      if (subject) {
+        rows = rows.filter(r => r.subject === subject);
+      }
+      if (minRaw !== "") {
+        const min = Number(minRaw);
+        rows = rows.filter(r => r.score >= min);
+      }
+      if (maxRaw !== "") {
+        const max = Number(maxRaw);
+        rows = rows.filter(r => r.score <= max);
+      }
+
+      // apply sorting
+      rows = sortRows(rows, state.sortKey, state.sortDir);
+      state.rows = rows;
+      renderRows(rows);
+    }
+
+    // Header click handler for sorting
+    function onHeaderClick(e) {
+      const key = e.currentTarget.dataset.key;
+      if (!key) return;
+      if (state.sortKey === key) {
+        state.sortDir = -state.sortDir; // toggle
+      } else {
+        state.sortKey = key;
+        state.sortDir = 1; // default ascending
+      }
+      // update sort indicator visuals
+      headers.forEach(h => {
+        h.querySelector(".sort-ind").textContent = (h.dataset.key === state.sortKey) ? (state.sortDir === 1 ? "▲" : "▼") : "⇅";
+      });
+      // Re-apply filters (which also sorts)
+      applyFilters();
+    }
+
+    // Reset filters
+    function resetFilters() {
+      subjectFilter.value = "";
+      minScoreInput.value = "";
+      maxScoreInput.value = "";
+      state.sortKey = null;
+      state.sortDir = 1;
+      headers.forEach(h => h.querySelector(".sort-ind").textContent = "⇅");
+      state.rows = data.slice();
+      renderRows(state.rows);
+      countEl.textContent = state.rows.length;
+      summary.textContent = "";
+    }
+
+    // Accessibility: keyboard sorting (Enter/Space)
+    function attachKeyboardSupport() {
+      headers.forEach(h => {
+        h.tabIndex = 0;
+        h.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            onHeaderClick({ currentTarget: h });
+          }
+        });
+      });
+    }
+
+    // Init
+    function init() {
+      initSubjectOptions();
+      headers.forEach(h => h.addEventListener("click", onHeaderClick));
+      attachKeyboardSupport();
+      applyBtn.addEventListener("click", applyFilters);
+      resetBtn.addEventListener("click", resetFilters);
+      // init sort indicators
+      headers.forEach(h => {
+        const span = h.querySelector(".sort-ind");
+        if (!span) {
+          const s = document.createElement("span");
+          s.className = "sort-ind";
+          s.textContent = "⇅";
+          h.appendChild(s);
+        }
+      });
+      // default render
+      state.rows = data.slice();
+      renderRows(state.rows);
+    }
+
+    init();
+  </script>
+</body>
+</html>
